@@ -4,10 +4,12 @@
 #include <stdint.h>
 #include <math.h>
 #include <string.h>
+#include <stdlib.h>
 
 // ----- TODO ----
-// -> Panel (structure, types/uses [?]) 
-// -> Cross button state resolver (integrated array [?])
+// -> Button/text Clipping
+// -> text box
+// -> multi window panel (like this editor)
 
 #define WIDTH 800
 #define HEIGHT 600
@@ -16,8 +18,8 @@
 #define da_append(array, item)\
     do{\
         if((array).size >= (array).capacity){\
-            (array).capcity = (array).capacity == 0 ? 10 : (array).capacity * 2;\
-            (array).items = realloc((array).items, sizeof(*(array).items)*(array).capcity);\
+            (array).capacity = (array).capacity == 0 ? 10 : (array).capacity * 2;\
+            (array).items = realloc((array).items, sizeof(*(array).items)*(array).capacity);\
             if((array).items == NULL){perror("[DA_APPEND]: Failed to Realloc\n"); exit(1);}\
         }\
         (array).items[(array).size++] = item;\
@@ -25,9 +27,14 @@
 
 // --- global variables --------
 const Color SILVER = {192, 192, 192, 255};
+
 #define PRESSED_COUNTER 0.3f //seconds
+#define POPUP_TIME 1.0f //seconds
+
+#define DT 1.0f/60.0f
 
 // --- structs ------
+// --- Core structs -----
 typedef struct{
     Color normal;
     Color hover;
@@ -58,35 +65,167 @@ typedef struct{
 
 typedef struct{
     Rectangle rec;
-    Color color;
-}Panel; 
-// Buttons position are relative to the panel size and position
-
-typedef struct{
-    Rectangle rec; 
     DColor color;
     Color textColor;
-    State state; 
+    State state;
+
     bool isActive;
     char label[100];
+}SelectionButton;
 
+typedef struct{
+    Rectangle rec;
+    Color color;
+}Panel;  
+
+typedef struct{
+    Rectangle rec;
+    Color color;
+    Color textColor;
+    char* text;
+
+    int padX;
+    int padY;
+    int fontSize;
+}TextPanel;
+
+typedef struct{
+    Rectangle rec;
+    float innerY;
+    float barLength;
+    Color base;
+    DColor color;
+    State state; 
+
+    bool isActive; 
+}ScrollBar_Y;
+
+typedef struct{
+    Rectangle rec;
+    float innerX;
+    float barLength;
+    Color base;
+    DColor color;
+    State state; 
+
+    bool isActive; 
+}ScrollBar_X;
+
+// ---- derived structs --------
+typedef struct{
+    TextPanel panel;
+    bool isActive;
+    ActionButton button;
+}PopUpPanel;
+
+typedef struct{
+    TextPanel panel;
+    float time;
+}PopUpPanel_Timer;
+
+typedef struct{
+    SelectionButton button;
     Panel panel;
-}PanelButton;
+}PanelButton_Panel;
+
+typedef struct{
+    SelectionButton button;
+    TextPanel panel;
+}PanelButton_TextPanel;
+
+typedef struct{
+    SelectionButton button;
+    PopUpPanel panel;
+}PanelButton_PopUpPanel;
+
+typedef struct{
+    Panel panel;
+    ScrollBar_Y scrollBarY;
+    ScrollBar_X scrollBarX;
+
+    bool enableScrollY; 
+    bool enableScrollX; 
+}ScrollPanel;
+
+typedef struct{
+    SelectionButton button;
+    float baseY;
+    float baseX;
+}SelectionButton_B; //selection button with base position
+//base position are update when window/panel resize
+
+typedef struct{
+    ScrollPanel panel;
+    float totalContentHeight;
+    float totalContentWidth;
+
+    float padX;
+    float padY;
+
+    SelectionButton_B *items;
+    size_t size;
+    size_t capacity;
+}ButtonPanel; 
+
+typedef struct{
+    Rectangle rec;
+    Color color;
+}WindowPanel;
 
 /// ----- function declaration-----------
 ActionButton getActionButton(float x,  float y,  float width, float height, char* label); //return the default button
 ActionButton_D getActionButton_D(float x, float y, float width, float height, char* label); //return the default button_D
-PanelButton getPanelButton(float x, float y, float width, float height, char* label, Panel panel); //return the default panel button
+SelectionButton getSelectionButton(float x,  float y,  float width, float height, char* label);
 Panel getPanel(float x, float y, float width, float height); //return the default panel
+TextPanel getTextPanel(float x, float y, float width, float height, const char* text);
+PopUpPanel getPopUpPanel(float x, float y, float width, float height, char* text, char* buttonLabel);
+PopUpPanel_Timer getPopUpPanel_Timer(float x, float y, float width, float height, char* text);
+PanelButton_Panel getPanelButton_Panel(float x, float y, float width, float height, char* label, Panel panel);
+PanelButton_TextPanel getPanelButton_TextPanel(float x, float y, float width, float height, char* label, TextPanel panel);
+PanelButton_PopUpPanel getPanelButton_PopUpPanel(float x, float y, float width, float height, char* label, PopUpPanel panel);
+ScrollBar_Y getScrollBar_Y(float x, float y, float width, float height, float barLength);
+ScrollBar_X getScrollBar_X(float x, float y, float width, float height, float barLength);
+ScrollPanel getScrollPanel(float x, float y, float width, float height, float barLength);
+ButtonPanel getButtonPanel(float x, float y, float width, float height, float baseHeight, float padX, float padY, int buttonCount);
+SelectionButton_B getSelectionButton_B(float x, float y, float width, float height, char* label);
+
+void freeTextPanel(TextPanel* panel);
+void freePopUpPanel(PopUpPanel* panel);
+void freeButtonPanel(ButtonPanel* panel);
+
+void appendButtonPanel(ButtonPanel* panel, SelectionButton_B button, float padY, float padX); 
 
 void updateActionButton(ActionButton* button, Vector2 mouse);
 void updateActionButton_D(ActionButton_D* button, Vector2 mouse);
-void updatePanelButton(PanelButton* button, Vector2 mouse);
+void updateSelectionButton(SelectionButton* button, Vector2 mouse);
+void updateSelectionButton_B(SelectionButton_B* button, Vector2 mouse);
+void updatePopUpPanel(PopUpPanel* panel, Vector2 mouse);
+void updatePopUpPanel_Timer(PopUpPanel_Timer* panel);
+void updatePanelButton_Panel(PanelButton_Panel* button, Vector2 mouse);
+void updatePanelButton_TextPanel(PanelButton_TextPanel* button, Vector2 mouse);
+void updatePanelButton_PopUpPanel(PanelButton_PopUpPanel* button, Vector2 mouse);
+void updateScrollBar_Y(ScrollBar_Y* bar, Vector2 mouse);
+void updateScrollBar_X(ScrollBar_X* bar, Vector2 mouse);
+void updateScrollPanel(ScrollPanel* panel, Vector2 mouse);
+void updateButtonPanel(ButtonPanel* panel, Vector2 mouse);
 
 void drawActionButton_D(ActionButton_D button); 
 void drawActionButton(ActionButton button);
-void drawPanelButton(PanelButton button);
+void drawSelectionButton(SelectionButton button); 
+void drawSelectionButton_B(SelectionButton_B button);
+void drawPanel(Panel panel);
+void drawTextPanel(TextPanel panel);
+void drawPopUpPanel(PopUpPanel panel);
+void drawPopUpPanel_Timer(PopUpPanel_Timer panel);
+void drawPanelButton_Panel(PanelButton_Panel button);
+void drawPanelButton_TextPanel(PanelButton_TextPanel button);
+void drawPanelButton_PopUpPanel(PanelButton_PopUpPanel button);
+void drawScrollBar_Y(ScrollBar_Y bar);
+void drawScrollBar_X(ScrollBar_X bar);
+void drawScrollPanel(ScrollPanel panel);
+void drawButtonPanel(ButtonPanel panel);
 
+void DrawDynamicBoxText(Rectangle rect, const char *text, float maxFontSize, Color textColor, float padX, float padY);
 void drawText(Rectangle rec, char* label, int textOffsetX, int textOffsetY, Color color);
 Rectangle scaleRec(Rectangle rec, int scale);
 
@@ -94,8 +233,10 @@ Rectangle scaleRec(Rectangle rec, int scale);
 bool point_rect_collision(Rectangle rec, Vector2 point);
 bool circle_point_collision(Vector2 circle, float radius, Vector2 point);
 
+
 int main(){
     // -------init----------
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(WIDTH, HEIGHT, "UI");
     SetTargetFPS(60);
 
@@ -103,16 +244,52 @@ int main(){
     ActionButton_D arec = getActionButton_D(500, 400, 80,60, "Click here");
 
     Panel p = getPanel(200,50,400,150);
-    PanelButton pb = getPanelButton(50, 100, 40, 30, "Open", p);
+    TextPanel tp = getTextPanel(100,10,100,50,"this is just text");
+    PopUpPanel pp = getPopUpPanel(300, 10, 300, 150, "this is pop-up! it can handle big strings and dynamically resize", "OK");
+
+    PanelButton_Panel pb = getPanelButton_Panel(50, 100, 80, 30, "Open panel", p);
+    PanelButton_TextPanel tpb = getPanelButton_TextPanel(50, 150, 80, 30, "Open text", tp);
+    PanelButton_PopUpPanel ppb = getPanelButton_PopUpPanel(50, 200, 80, 30, "Open pop up", pp);
+
+    PopUpPanel_Timer ppt = getPopUpPanel_Timer(400, 10, 50, 50, "Timer Pop");
+
+
+    ScrollBar_Y sby = getScrollBar_Y(300, 20, 10, 200, 30);
+    ScrollBar_X sbx = getScrollBar_X(200, 240, 200, 10, 30);
+
+    ScrollPanel sp = getScrollPanel(100, 200, 300, 200, 30);
+    ButtonPanel bp = getButtonPanel(100, 200, 300, 200, 40, 10, 3, 6);
+
+    SelectionButton_B sbb = getSelectionButton_B(100, 200 + (7 * 40), 200, 40, "new button");
+    appendButtonPanel(&bp, sbb, 10, 3);
 
     //---------game loop ----------
     while(!WindowShouldClose()){
+        if(IsWindowResized()){
+            //[?] -> User should make ui position to handle this (not using fixed position)
+        }
+
+        if(PRESSED == rec.state){
+            ppt.time = POPUP_TIME;
+        }
 
         Vector2 mouse = GetMousePosition();
 
         updateActionButton(&rec, mouse);  
         updateActionButton_D(&arec, mouse);  
-        updatePanelButton(&pb, mouse);
+
+        updatePanelButton_Panel(&pb, mouse);
+        updatePanelButton_TextPanel(&tpb, mouse);
+        updatePanelButton_PopUpPanel(&ppb, mouse);
+
+        updatePopUpPanel_Timer(&ppt);
+
+        updateScrollBar_Y(&sby, mouse);
+        updateScrollBar_X(&sbx, mouse);
+
+        updateScrollPanel(&sp, mouse);
+
+        updateButtonPanel(&bp, mouse);
 
         // --- clear and draw -----
         BeginDrawing();
@@ -120,12 +297,32 @@ int main(){
 
         drawActionButton(rec);
         drawActionButton_D(arec);
-        drawPanelButton(pb);
+
+        // drawPanel(p);
+        // drawPopUpPanel(pp);
+        // drawTextPanel(tp);
+
+        drawPopUpPanel_Timer(ppt);
+
+        drawPanelButton_Panel(pb);
+        drawPanelButton_TextPanel(tpb);
+        drawPanelButton_PopUpPanel(ppb);
+
+        drawScrollBar_Y(sby);
+        drawScrollBar_X(sbx);
+
+        drawScrollPanel(sp);
+        drawButtonPanel(bp);
+
+        drawSelectionButton_B(sbb);
 
         EndDrawing();
     }
 
     // -- close----
+    freeTextPanel(&tp);
+    freePopUpPanel(&pp);
+    freeButtonPanel(&bp);
     CloseWindow();
     return 0;
 }
@@ -152,6 +349,7 @@ bool circle_point_collision(Vector2 circle, float radius, Vector2 point)
     return false;
 }
 
+ //------ get panel/buttons ---------
 ActionButton getActionButton(float x, float y, float width, float height, char* label)
 {
     ActionButton button = {
@@ -183,21 +381,31 @@ ActionButton_D getActionButton_D(float x, float y, float width, float height, ch
     return button; 
 }
 
-PanelButton getPanelButton(float x, float y, float width, float height, char* label, Panel panel)
+SelectionButton getSelectionButton(float x,  float y,  float width, float height, char* label)
 {
-    PanelButton button = {
+    SelectionButton button = {
         .rec = (Rectangle){x,y,width,height},
         .color = (DColor){
-            .normal = SILVER,
-            .hover  = LIGHTGRAY,
-            .active = GRAY
+            .normal  = SILVER,
+            .hover   = LIGHTGRAY,
+            .active  = GRAY
         },
         .textColor = BLACK,
         .state = NORMAL,
-        .isActive = false,
-        .panel = panel
+        .isActive = false
     };
     strcpy(button.label, label);
+
+    return button; 
+}
+
+SelectionButton_B getSelectionButton_B(float x, float y, float width, float height, char* label)
+{
+    SelectionButton_B button = {
+        .button = getSelectionButton(x, y, width, height, label),
+        .baseX = x,
+        .baseY = y
+    };
     return button;
 }
 
@@ -210,6 +418,218 @@ Panel getPanel(float x, float y, float width, float height)
     return panel;
 }
 
+TextPanel getTextPanel(float x, float y, float width, float height, const char* text)
+{
+    TextPanel panel = {
+        .rec = (Rectangle){x, y, width, height},
+        .color = SILVER,
+        .textColor = BLACK,
+        .text = strdup(text),
+        .padX = 12,
+        .padY = 8,
+        .fontSize  = 32
+    };
+    return panel;
+}
+
+PopUpPanel getPopUpPanel(float x, float y, float width, float height, char* text, char* buttonLabel)
+{
+    float bW = 15*width/100;
+    float bH = 15*height/100;
+
+    PopUpPanel panel = {
+        .panel = getTextPanel(x,y,width,height,text),
+        .isActive = false,
+        .button = getActionButton(x + ((width/2) - (bW/2)), y + (height - (bH*1.5)), bW, bH, buttonLabel)   
+    };
+    return panel;
+}
+
+PopUpPanel_Timer getPopUpPanel_Timer(float x, float y, float width, float height, char* text)
+{
+    PopUpPanel_Timer panel = {
+        .panel = getTextPanel(x,y,width,height,text),
+        .time = POPUP_TIME
+    };
+    return panel;
+}
+
+PanelButton_Panel getPanelButton_Panel(float x, float y, float width, float height, char* label, Panel panel)
+{
+    PanelButton_Panel button = {
+        .button = getSelectionButton(x, y, width, height, label),
+        .panel = panel
+    };
+    strcpy(button.button.label, label);
+    return button;
+}
+
+PanelButton_TextPanel getPanelButton_TextPanel(float x, float y, float width, float height, char* label, TextPanel panel)
+{
+    PanelButton_TextPanel button = {
+        .button = getSelectionButton(x, y, width, height, label),
+        .panel = panel
+    };
+    strcpy(button.button.label, label);
+    return button;
+}
+
+PanelButton_PopUpPanel getPanelButton_PopUpPanel(float x, float y, float width, float height, char* label, PopUpPanel panel)
+{
+    PanelButton_PopUpPanel button = {
+        .button = getSelectionButton(x, y, width, height, label),
+        .panel = panel
+    };
+    strcpy(button.button.label, label);
+    return button;
+}
+
+ScrollBar_Y getScrollBar_Y(float x, float y, float width, float height, float barLength)
+{
+    ScrollBar_Y sb = {
+        .rec = (Rectangle){x, y, width, height},
+        .innerY = y,
+        .barLength = barLength > height ? height:barLength,
+        .base = SILVER,
+        .color = (DColor){
+            .normal = GRAY,
+            .hover = WHITE,
+            .active = GREEN
+        },
+        .state = NORMAL,
+        .isActive = false
+    };
+    return sb;
+}
+
+ScrollBar_X getScrollBar_X(float x, float y, float width, float height, float barLength)
+{
+    ScrollBar_X sb = {
+        .rec = (Rectangle){x, y, width, height},
+        .innerX = x,
+        .barLength = barLength > width ? width:barLength,
+        .base = SILVER,
+        .color = (DColor){
+            .normal = GRAY,
+            .hover = WHITE,
+            .active = GREEN
+        },
+        .state = NORMAL,
+        .isActive = false
+    };
+    return sb;
+}
+
+ScrollPanel getScrollPanel(float x, float y, float width, float height, float barLength)
+{
+    int sbW = 8;
+    int sbPad = 5;
+
+    ScrollPanel panel = {
+        .panel = getPanel(x, y, width, height),
+        .scrollBarX = getScrollBar_X(x+sbPad, y+height-sbW, width-(2*sbPad),sbW, barLength),
+        .scrollBarY = getScrollBar_Y(x+width-sbW, y+sbPad, sbW, height-(2*sbPad), barLength),
+        .enableScrollY = true,
+        .enableScrollX = true
+    };
+    panel.panel.color = DARKGRAY;
+
+    return panel;
+}
+
+ButtonPanel getButtonPanel(float x, float y, float width, float height, float baseHeight, float padX, float padY, int buttonCount)
+{
+    ButtonPanel panel = {
+        .panel = getScrollPanel(x, y, width, height, 30),
+        .items = malloc(sizeof(SelectionButton_B)*buttonCount),
+        .size = buttonCount,
+        .capacity = buttonCount,
+        .totalContentHeight = 0.0f,
+        .totalContentWidth = 0.0f,
+        .padY = padY,
+        .padX = padX
+    };
+
+    unsigned int totalHeight = 0;
+    int padXLeft = padX;
+    int bW = width-(padXLeft) - panel.panel.scrollBarY.rec.width;
+    int bH = baseHeight > height ? height:baseHeight;
+    int padTop = padY;
+
+    for(int i = 0; i < buttonCount; i++){
+        panel.items[i] = getSelectionButton_B(x + padXLeft, y + padTop + (i*bH) + (i*padTop), bW, bH, "");
+
+        panel.items[i].baseY += padY;
+        panel.items[i].baseX += padX;
+
+        totalHeight +=bH+padTop;
+    }
+    panel.totalContentHeight = totalHeight;
+
+    panel.panel.enableScrollY = false;
+    panel.panel.enableScrollX = false;
+
+    if(totalHeight > height){
+        panel.panel.enableScrollY = true;
+    }
+    return panel;
+}
+
+// ------- free memory------------
+void freePopUpPanel(PopUpPanel* panel)
+{
+    free(panel->panel.text);
+}
+
+void freeTextPanel(TextPanel* panel)
+{
+    free(panel->text);
+}
+
+void freeButtonPanel(ButtonPanel* panel)
+{
+    free(panel->items);
+}
+
+void appendButtonPanel(ButtonPanel* panel, SelectionButton_B button, float padY, float padX)
+{
+    if(panel->size > 0){
+        button.button.rec.x = panel->panel.panel.rec.x + padX;
+        button.button.rec.y = (panel->items[panel->size - 1].baseY + panel->items[panel->size - 1].button.rec.height) + padY;
+
+        button.baseX = button.button.rec.x;
+        button.baseY = button.button.rec.y;
+    }else{
+        if(panel->panel.panel.rec.width <= 0.0f && 
+            panel->panel.panel.rec.height <= 0.0f){
+            perror("[APPEND_BUTTON_PANEL]: Un-initialized Panel\n");
+            exit(1);
+        }
+
+        button.button.rec.x = panel->panel.panel.rec.x + padX;
+        button.button.rec.y = panel->panel.panel.rec.y + padY;
+
+        button.baseX = button.button.rec.x;
+        button.baseY = button.button.rec.y;
+
+        panel->totalContentHeight = 0.0f; 
+        panel->totalContentWidth = 0.0f; 
+        panel->padY = padY;
+        panel->padX = padX;
+        panel->panel.enableScrollY = false;
+        panel->panel.enableScrollX = false;
+
+        if(button.button.rec.height + padY > panel->panel.panel.rec.height){
+            panel->panel.enableScrollY = true;
+        }
+    }
+    
+    da_append(*panel, button); 
+    
+    panel->totalContentHeight += button.button.rec.height + padY;
+}
+
+// -------- update panels/buttons ---------
 void updateActionButton(ActionButton* button, Vector2 mouse)
 {
     button->state = NORMAL;//reset
@@ -224,10 +644,8 @@ void updateActionButton(ActionButton* button, Vector2 mouse)
 
 void updateActionButton_D(ActionButton_D* button, Vector2 mouse)
 {
-    if(button->pressCounter > PRESSED_COUNTER) button->pressCounter = PRESSED_COUNTER;
-
     if(button->pressCounter != PRESSED_COUNTER || button->pressCounter < PRESSED_COUNTER){
-        button->pressCounter -= GetFrameTime();
+        button->pressCounter -= DT;
         if(button->pressCounter <= 0.0f) button->pressCounter = PRESSED_COUNTER;
     } 
 
@@ -237,12 +655,12 @@ void updateActionButton_D(ActionButton_D* button, Vector2 mouse)
         button->state = HOVER;
         if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT)){
             button->state = PRESSED;
-            button->pressCounter -= GetFrameTime();
+            button->pressCounter -= DT;
         }
     }
 }
 
-void updatePanelButton(PanelButton* button, Vector2 mouse)
+void updateSelectionButton(SelectionButton* button, Vector2 mouse)
 {
     button->state = NORMAL; 
 
@@ -257,6 +675,201 @@ void updatePanelButton(PanelButton* button, Vector2 mouse)
     }
 }
 
+void updateSelectionButton_B(SelectionButton_B* button, Vector2 mouse)
+{
+    updateSelectionButton(&button->button, mouse);
+}
+
+void updatePopUpPanel(PopUpPanel* panel, Vector2 mouse)
+{
+    if(!panel->isActive) return;
+
+    panel->button.state = NORMAL;
+
+    if(point_rect_collision(panel->button.rec, mouse)){
+        panel->button.state = HOVER;
+        if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT)){
+            panel->button.state = PRESSED;
+            panel->isActive = false;
+        }
+    }
+}
+
+void updatePopUpPanel_Timer(PopUpPanel_Timer* panel)
+{
+    if(panel->time <= 0.0f) return;
+    panel->time -= DT;
+}
+
+void updatePanelButton_Panel(PanelButton_Panel* button, Vector2 mouse)
+{
+
+    updateSelectionButton(&button->button, mouse);
+}
+
+void updatePanelButton_TextPanel(PanelButton_TextPanel* button, Vector2 mouse)
+{
+    updateSelectionButton(&button->button, mouse);
+}
+
+void updatePanelButton_PopUpPanel(PanelButton_PopUpPanel* button, Vector2 mouse)
+{
+    if(button->panel.isActive){
+        updatePopUpPanel(&button->panel, mouse);
+
+        if(!button->panel.isActive){
+            button->button.isActive = false;
+            button->panel.isActive = false;
+        }
+    }
+
+    button->button.state = NORMAL; 
+
+    if(point_rect_collision(button->button.rec, mouse)){
+        button->button.state = HOVER;
+        if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT)){
+            button->button.state = PRESSED;
+
+            if(button->button.isActive){
+                button->button.isActive = false;
+                button->panel.isActive = false;
+            } 
+            else {
+                button->button.isActive = true;
+                button->panel.isActive = true;
+            }
+        }
+    }
+}
+
+void updateScrollBar_Y(ScrollBar_Y* bar, Vector2 mouse)
+{
+    float y = bar->rec.y;
+    float h = bar->rec.height;
+
+    float innerY = bar->innerY;
+    Rectangle barRec = {bar->rec.x, innerY, bar->rec.width, bar->barLength};
+
+    bar->state = NORMAL;
+
+    if(!bar->isActive){
+        if(point_rect_collision(barRec, mouse)){
+            bar->state = HOVER;
+            if(IsMouseButtonDown(MOUSE_BUTTON_LEFT)){
+                bar->state = PRESSED;
+                bar->isActive = true;
+            }
+        }
+    }
+
+    if(bar->isActive){
+        bar->state = PRESSED;
+        Vector2 delta = GetMouseDelta();
+
+        if(innerY >= y && (innerY+bar->barLength) <= (y+h)){
+            innerY += delta.y;
+        }
+
+        if(innerY < y) { bar->innerY = y; }
+        else if((innerY+bar->barLength) > (h+y)){ bar->innerY = (y+h)-bar->barLength;}
+        else {bar->innerY = innerY;}
+
+
+        if(IsMouseButtonUp(MOUSE_BUTTON_LEFT)){
+            bar->isActive = false;
+        }
+    }
+}
+
+void updateScrollBar_X(ScrollBar_X* bar, Vector2 mouse)
+{
+    float x = bar->rec.x;
+    float w = bar->rec.width;
+
+    float innerX = bar->innerX;
+    Rectangle barRec = {innerX, bar->rec.y, bar->barLength, bar->rec.height};
+
+    bar->state = NORMAL;
+
+    if(!bar->isActive){
+        if(point_rect_collision(barRec, mouse)){
+            bar->state = HOVER;
+            if(IsMouseButtonDown(MOUSE_BUTTON_LEFT)){
+                bar->state = PRESSED;
+                bar->isActive = true;
+            }
+        }
+    }
+
+    if(bar->isActive){
+        bar->state = PRESSED;
+        Vector2 delta = GetMouseDelta();
+
+        if(innerX >= x && (innerX+bar->barLength) <= (x+w)){
+            innerX += delta.x;
+        }
+
+        if(innerX < x) { bar->innerX = x; }
+        else if((innerX+bar->barLength) > (w+x)){ bar->innerX = (x+w)-bar->barLength;}
+        else {bar->innerX = innerX;}
+
+
+        if(IsMouseButtonUp(MOUSE_BUTTON_LEFT)){
+            bar->isActive = false;
+        }
+    }
+}
+
+void updateScrollPanel(ScrollPanel* panel, Vector2 mouse)
+{
+    if(panel->enableScrollX){
+        updateScrollBar_X(&panel->scrollBarX, mouse);
+    }
+    if(panel->enableScrollY){
+        updateScrollBar_Y(&panel->scrollBarY, mouse);
+    }
+}
+
+void updateButtonPanel(ButtonPanel* panel, Vector2 mouse)
+{
+    updateScrollPanel(&panel->panel, mouse);
+
+    float trackHeight = panel->panel.scrollBarY.rec.height;
+    float trackTop = panel->panel.scrollBarY.rec.y;
+    float thumbY = panel->panel.scrollBarY.innerY;
+    float thumbHeight = panel->panel.scrollBarY.barLength;
+    float panelHeight = panel->panel.panel.rec.height;
+    float contentHeight = panel->totalContentHeight + (panel->padY*2);
+
+    float maxTravel = trackHeight - thumbHeight;
+    float maxContentOffset = contentHeight - panelHeight;
+
+    float scrollRatio = (thumbY - trackTop) / maxTravel; 
+
+    if(scrollRatio < 0.0f) scrollRatio = 0.0f;
+    if(scrollRatio > 1.0f) scrollRatio = 1.0f;
+
+    float contentOffset = scrollRatio * maxContentOffset;
+
+    for(int i = 0; i < panel->size; i++){
+        panel->items[i].button.rec.y = panel->items[i].baseY - contentOffset;
+
+        if(panel->items[i].button.rec.y >= panel->panel.panel.rec.y &&
+            panel->items[i].button.rec.y + panel->items[i].button.rec.height <= panel->panel.panel.rec.y + panel->panel.panel.rec.height){
+                updateSelectionButton_B(&panel->items[i], mouse);
+
+            if(panel->items[i].button.isActive){
+                for(int j = 0; j < panel->size; j++){
+                    if(i == j) continue;
+
+                    panel->items[j].button.isActive = false;
+                }
+            }
+        }
+    }
+}
+
+// --------- draw panels/buttons --------------
 void drawActionButton_D(ActionButton_D button)
 {
     //base
@@ -342,13 +955,14 @@ void drawActionButton_D(ActionButton_D button)
     int textOffsetX = 0; 
     int textOffsetY = 0;
 
-    if(button.state == PRESSED){
+    if(button.state == PRESSED || button.pressCounter < PRESSED_COUNTER){
         textOffsetX = 1;
         textOffsetY = 1;
-    }if(button.state == HOVER){
+    }else if(button.state == HOVER){
         textOffsetX = -1;
         textOffsetY = -1;
     }
+
     drawText(button.rec, button.label, textOffsetX, textOffsetY, button.textColor);
 }
 
@@ -372,10 +986,9 @@ void drawActionButton(ActionButton button)
     drawText(button.rec, button.label,textOffsetX, textOffsetY, button.textColor);
 }
 
-void drawPanelButton(PanelButton button)
+void drawSelectionButton(SelectionButton button)
 {
     if(button.isActive){
-        DrawRectangleRec(button.panel.rec, button.panel.color);
         DrawRectangleRec(button.rec, button.color.active);
     }else{
         switch(button.state){
@@ -392,6 +1005,161 @@ void drawPanelButton(PanelButton button)
     }
     drawText(button.rec, button.label, 0, 0, button.textColor);
 }
+
+void drawSelectionButton_B(SelectionButton_B button)
+{
+    drawSelectionButton(button.button);
+}
+
+void drawPanel(Panel panel)
+{
+    DrawRectangleRec(panel.rec, panel.color);
+}
+
+void drawTextPanel(TextPanel panel)
+{
+    DrawRectangleRec(panel.rec, panel.color);
+    DrawDynamicBoxText(panel.rec, panel.text, panel.fontSize, panel.textColor, panel.padX, panel.padY);
+}
+
+void drawPopUpPanel(PopUpPanel panel)
+{
+    if(!panel.isActive) return;
+    DrawRectangleRec(panel.panel.rec, panel.panel.color);
+    DrawDynamicBoxText(panel.panel.rec, panel.panel.text, panel.panel.fontSize, panel.panel.textColor, panel.panel.padX, panel.panel.padY);
+
+    DrawRectangleRec(scaleRec(panel.button.rec, 2), BLACK);
+    drawActionButton(panel.button);
+}
+
+void drawPopUpPanel_Timer(PopUpPanel_Timer panel)
+{
+    if(panel.time <= 0.0f) return;
+    DrawRectangleRec(panel.panel.rec, panel.panel.color);
+    DrawDynamicBoxText(panel.panel.rec, panel.panel.text, panel.panel.fontSize, panel.panel.textColor, panel.panel.padX, panel.panel.padY);
+}
+
+void drawPanelButton_Panel(PanelButton_Panel button)
+{
+    if(button.button.isActive){
+        drawPanel(button.panel);
+        DrawRectangleRec(button.button.rec, button.button.color.active);
+    }else{
+        switch(button.button.state){
+            case NORMAL:
+                DrawRectangleRec(button.button.rec, button.button.color.normal);
+                break;
+            case HOVER:
+                DrawRectangleRec(button.button.rec, button.button.color.hover);
+                break;
+            case PRESSED:
+                DrawRectangleRec(button.button.rec, button.button.color.active);
+                break;
+        }
+    }
+    drawText(button.button.rec, button.button.label, 0, 0, button.button.textColor);
+}
+
+void drawPanelButton_TextPanel(PanelButton_TextPanel button)
+{
+    if(button.button.isActive){
+        drawTextPanel(button.panel);
+        DrawRectangleRec(button.button.rec, button.button.color.active);
+    }else{
+        switch(button.button.state){
+            case NORMAL:
+                DrawRectangleRec(button.button.rec, button.button.color.normal);
+                break;
+            case HOVER:
+                DrawRectangleRec(button.button.rec, button.button.color.hover);
+                break;
+            case PRESSED:
+                DrawRectangleRec(button.button.rec, button.button.color.active);
+                break;
+        }
+    }
+    drawText(button.button.rec, button.button.label, 0, 0, button.button.textColor);
+}
+
+void drawPanelButton_PopUpPanel(PanelButton_PopUpPanel button)
+{
+    if(button.button.isActive){
+        drawPopUpPanel(button.panel);
+        DrawRectangleRec(button.button.rec, button.button.color.active);
+    }else{
+        switch(button.button.state){
+            case NORMAL:
+                DrawRectangleRec(button.button.rec, button.button.color.normal);
+                break;
+            case HOVER:
+                DrawRectangleRec(button.button.rec, button.button.color.hover);
+                break;
+            case PRESSED:
+                DrawRectangleRec(button.button.rec, button.button.color.active);
+                break;
+        }
+    }
+    drawText(button.button.rec, button.button.label, 0, 0, button.button.textColor);
+}
+
+void drawScrollBar_Y(ScrollBar_Y bar)
+{
+    DrawRectangleRec(bar.rec, bar.base); 
+
+    Rectangle barRec = {bar.rec.x, bar.innerY, bar.rec.width, bar.barLength};
+    switch(bar.state){
+        case NORMAL:
+            DrawRectangleRec(barRec, bar.color.normal); 
+            break;
+        case HOVER:
+            DrawRectangleRec(barRec, bar.color.hover); 
+            break;
+        case PRESSED:
+            DrawRectangleRec(barRec, bar.color.active); 
+            break;
+    }
+}
+
+void drawScrollBar_X(ScrollBar_X bar)
+{
+    DrawRectangleRec(bar.rec, bar.base); 
+
+    Rectangle barRec = {bar.innerX, bar.rec.y, bar.barLength, bar.rec.height};
+    switch(bar.state){
+        case NORMAL:
+            DrawRectangleRec(barRec, bar.color.normal); 
+            break;
+        case HOVER:
+            DrawRectangleRec(barRec, bar.color.hover); 
+            break;
+        case PRESSED:
+            DrawRectangleRec(barRec, bar.color.active); 
+            break;
+    }
+}
+
+void drawScrollPanel(ScrollPanel panel)
+{
+    drawPanel(panel.panel);
+    if(panel.enableScrollX){
+        drawScrollBar_X(panel.scrollBarX);
+    }
+    if(panel.enableScrollY){
+        drawScrollBar_Y(panel.scrollBarY);
+    }
+}
+
+void drawButtonPanel(ButtonPanel panel)
+{
+   drawScrollPanel(panel.panel); 
+   for(int i = 0; i < panel.size; i++){
+        if(panel.items[i].button.rec.y >= panel.panel.panel.rec.y &&
+            panel.items[i].button.rec.y + panel.items[i].button.rec.height <= panel.panel.panel.rec.y + panel.panel.panel.rec.height){
+            drawSelectionButton_B(panel.items[i]);
+        }
+   }
+}
+
 
 void drawText(Rectangle rec, char* label, int textOffsetX, int textOffsetY, Color color)
 {
@@ -431,3 +1199,75 @@ Rectangle scaleRec(Rectangle rec, int scale)
     };
     return rectangle;
 }
+
+void DrawDynamicBoxText(Rectangle rect, const char *text, float maxFontSize, Color textColor, float padX, float padY) 
+{
+    float s = maxFontSize;
+    char lines[64][256];
+    int lineCount = 0;
+    
+    float innerWidth  = rect.width  - (padX * 2.0f);
+    float innerHeight = rect.height - (padY * 2.0f);
+    
+    // Iterative Auto-Sizing Loop
+    while (s > 4.0f) {
+        lineCount = 0;
+        memset(lines, 0, sizeof(lines));
+        
+        char textCopy[1024];
+        strncpy(textCopy, text, sizeof(textCopy));
+        
+        char *word = strtok(textCopy, " ");
+        char currentLine[256] = "";
+        
+        while (word != NULL) {
+            char testLine[256];
+            if (strlen(currentLine) > 0) {
+                snprintf(testLine, sizeof(testLine), "%s %s", currentLine, word);
+            } else {
+                snprintf(testLine, sizeof(testLine), "%s", word);
+            }
+            
+            int lineWidth = MeasureText(testLine, (int)s);
+            
+            if (lineWidth > innerWidth) {
+                if (lineCount < 64) {
+                    strcpy(lines[lineCount++], currentLine);
+                }
+                snprintf(currentLine, sizeof(currentLine), "%s", word);
+            } else {
+                strcpy(currentLine, testLine);
+            }
+            word = strtok(NULL, " ");
+        }
+        if (strlen(currentLine) > 0 && lineCount < 64) {
+            strcpy(lines[lineCount++], currentLine);
+        }
+        
+        float lineHeight = s * 1.2f; 
+        float totalBlockHeight = lineCount * lineHeight;
+        
+        // Check if block fits within the restricted inner height bounds
+        if (totalBlockHeight > innerHeight) {
+            s -= 1.0f;
+        } else {
+            break; 
+        }
+    }
+    
+    //  Compute Centering Offsets constrained inside the padded inner area
+    float lineHeight = s * 1.2f;
+    float totalBlockHeight = lineCount * lineHeight;
+    float startY = rect.y + padY + (innerHeight - totalBlockHeight) / 2.0f;
+    
+    // Draw Each Line Centered Horizontally Within the Inner Bounds
+    for (int i = 0; i < lineCount; i++) {
+        int lineWidth = MeasureText(lines[i], (int)s);
+        
+        float startX = rect.x + padX + (innerWidth - lineWidth) / 2.0f;
+        float currentY = startY + (i * lineHeight);
+        
+        DrawText(lines[i], (int)startX, (int)currentY, (int)s, textColor);
+    }
+}
+
