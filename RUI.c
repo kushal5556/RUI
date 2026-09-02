@@ -55,9 +55,6 @@ typedef struct{
     float x;
     float y;
     Color color;
-
-    float padY;
-    float padX;
     float fontSize;
 }Label;
 
@@ -138,7 +135,6 @@ typedef struct{
     bool pressedEnter;
 }TextBox;
 
-
 // ---- derived structs --------
 typedef struct{
     Rectangle rec;
@@ -204,7 +200,7 @@ typedef struct{
 typedef struct{
     ScrollPanel panel;
     float totalContentHeight;
-    float totalContentWidth;
+    float maxContentWidth;
 
     float padX;
     float padY;
@@ -216,7 +212,7 @@ typedef struct{
 
 /// ----- function declaration-----------
 Button getButton(float x, float y, float width, float height);
-Label getLabel(float x, float y, float fontSize, float padX, float padY, char* label);
+Label getLabel(float x, float y, float fontSize, char* label);
 Text getText(float x, float y, float width, float height, float fontSize, float padX, float padY, char* label);
 ActionButton getActionButton(float x,  float y,  float width, float height, char* label); //return the default button
 ActionButton_D getActionButton_D(float x, float y, float width, float height, char* label); //return the default button_D
@@ -233,6 +229,7 @@ ScrollBar_X getScrollBar_X(float x, float y, float width, float height, float ba
 ScrollPanel getScrollPanel(float x, float y, float width, float height, float barLength);
 ButtonPanel getButtonPanel(float x, float y, float width, float height, float baseHeight, float padX, float padY, int buttonCount);
 SelectionButton_B getSelectionButton_B(float x, float y, float width, float height, char* label);
+TextBox getTextBox(float x, float y, float width, float height);
 
 void freeText(Text* text);
 void freeTextPanel(TextPanel* panel);
@@ -240,6 +237,7 @@ void freeButtonPanel(ButtonPanel* panel);
 
 void appendButtonPanel(ButtonPanel* panel, SelectionButton_B button, float padX, float padY); 
 float getScrollBarY_contentOffset(ScrollBar_Y bar, Rectangle panel, float totalContentHeight);
+float getScrollBarX_contentOffset(ScrollBar_X bar, Rectangle panel, float maxContentWidth);
 
 void updateButton(Button* button, Vector2 mouse);
 void updateActionButton(ActionButton* button, Vector2 mouse);
@@ -312,16 +310,10 @@ int main(){
     ScrollPanel sp = getScrollPanel(100, 200, 300, 200, 30);
     ButtonPanel bp = getButtonPanel(100, 200, 300, 200, 40, 10, 3, 6);
 
-    SelectionButton_B sbb = getSelectionButton_B(100, 200 + (7 * 40), 200, 40, "new button");
-    appendButtonPanel(&bp, sbb, 10, 3);
+    SelectionButton_B sbb = getSelectionButton_B(100, 200 + (7 * 40), 500, 40, "new button");
+    appendButtonPanel(&bp, sbb, 20, 3);
 
-    TextBox tb = {
-        .rec = (Rectangle){600, 300, 180, 30},
-        .color = SILVER,
-        .textColor = BLACK,
-        .isActive = false,
-        .pressedEnter = false
-    };
+    TextBox tb = getTextBox(500, 300, 250, 50);
 
     //---------game loop ----------
     while(!WindowShouldClose()){
@@ -377,7 +369,7 @@ int main(){
         drawScrollBar_Y(sby);
         drawScrollBar_X(sbx);
 
-        drawScrollPanel(sp);
+        // drawScrollPanel(sp);
         drawButtonPanel(bp);
 
         drawTextBox(tb);
@@ -429,15 +421,13 @@ Button getButton(float x, float y, float width, float height)
     return button;
 }
 
-Label getLabel(float x, float y, float fontSize, float padX, float padY, char* label)
+Label getLabel(float x, float y, float fontSize, char* label)
 {
     Label lab = {
         .x = x, 
         .y = y, 
         .color = BLACK,
         .fontSize = fontSize,
-        .padY = padY,
-        .padX = padX
     };
     strcpy(lab.label, label);
     return lab;
@@ -639,8 +629,8 @@ ScrollPanel getScrollPanel(float x, float y, float width, float height, float ba
 
     ScrollPanel panel = {
         .panel = getPanel(x, y, width, height),
-        .scrollBarX = getScrollBar_X(x+sbPad, y+height-sbW, width-(2*sbPad),sbW, barLength),
-        .scrollBarY = getScrollBar_Y(x+width-sbW, y+sbPad, sbW, height-(2*sbPad), barLength),
+        .scrollBarX = getScrollBar_X(x, y+height, width,sbW, barLength),
+        .scrollBarY = getScrollBar_Y(x+width, y, sbW, height, barLength),
         .enableScrollY = true,
         .enableScrollX = true
     };
@@ -657,12 +647,13 @@ ButtonPanel getButtonPanel(float x, float y, float width, float height, float ba
         .size = buttonCount,
         .capacity = buttonCount,
         .totalContentHeight = 0.0f,
-        .totalContentWidth = 0.0f,
+        .maxContentWidth = 0.0f,
         .padY = padY,
         .padX = padX
     };
 
-    unsigned int totalHeight = 0;
+    float totalHeight = 0.0f;
+    float maxWidth = -9999.0f;
     int padXLeft = padX;
     int bW = width-(padXLeft) - panel.panel.scrollBarY.rec.width;
     int bH = baseHeight > height ? height:baseHeight;
@@ -675,8 +666,13 @@ ButtonPanel getButtonPanel(float x, float y, float width, float height, float ba
         panel.items[i].baseX += padX;
 
         totalHeight +=bH+padTop;
+
+        if(maxWidth + padXLeft < panel.items[i].button.rec.width){
+            maxWidth = panel.items[i].button.rec.width + padXLeft;
+        }
     }
     panel.totalContentHeight = totalHeight;
+    panel.maxContentWidth    = maxWidth;
 
     panel.panel.enableScrollY = false;
     panel.panel.enableScrollX = false;
@@ -684,8 +680,27 @@ ButtonPanel getButtonPanel(float x, float y, float width, float height, float ba
     if(totalHeight > height){
         panel.panel.enableScrollY = true;
     }
+    if(maxWidth > width){
+        panel.panel.enableScrollX = true;
+    }
     return panel;
 }
+
+TextBox getTextBox(float x, float y, float width, float height)
+{
+    TextBox tb = {
+        .text_length = 0, 
+        .rec = (Rectangle){x,y,width,height},
+        .color = SILVER,
+        .textColor = BLACK,
+        .isActive = false,
+        .pressedEnter = false
+    };
+    tb.text_input[0] = '\0';
+
+    return tb;
+}
+
 
 // ------- free memory------------
 void freeText(Text* text)
@@ -725,21 +740,68 @@ void appendButtonPanel(ButtonPanel* panel, SelectionButton_B button, float padX,
         button.baseY = button.button.rec.y;
 
         panel->totalContentHeight = 0.0f; 
-        panel->totalContentWidth = 0.0f; 
+        panel->maxContentWidth = 0.0f; 
         panel->padY = padY;
         panel->padX = padX;
         panel->panel.enableScrollY = false;
         panel->panel.enableScrollX = false;
-
-        if(button.button.rec.height + padY > panel->panel.panel.rec.height){
-            panel->panel.enableScrollY = true;
-        }
     }
     
     da_append(*panel, button); 
     
     panel->totalContentHeight += button.button.rec.height + padY;
+    if(panel->totalContentHeight > panel->panel.panel.rec.height){
+        panel->panel.enableScrollY = true;
+    }
+
+    if(panel->maxContentWidth < button.button.rec.width + padX){
+        panel->maxContentWidth = button.button.rec.width + padX;
+        if(panel->maxContentWidth > panel->panel.panel.rec.width){
+            panel->panel.enableScrollX = true;
+        }
+    }
 }
+
+float getScrollBarY_contentOffset(ScrollBar_Y bar, Rectangle panel, float totalContentHeight)
+{
+    float trackHeight = bar.rec.height;
+    float trackTop    = bar.rec.y;
+    float thumbY      = bar.innerY;
+    float thumbHeight = bar.barLength;
+    float panelHeight = panel.height;
+
+    float maxTravel = trackHeight - thumbHeight;
+    float maxContentOffset = totalContentHeight - panelHeight;
+
+    float scrollRatio = (thumbY - trackTop) / maxTravel; 
+
+    if(scrollRatio < 0.0f) scrollRatio = 0.0f;
+    if(scrollRatio > 1.0f) scrollRatio = 1.0f;
+
+    float contentOffset = scrollRatio * maxContentOffset;
+    return contentOffset;
+}
+
+float getScrollBarX_contentOffset(ScrollBar_X bar, Rectangle panel, float maxContentWidth)
+{
+    float trackWidth  = bar.rec.width;
+    float trackLeft   = bar.rec.x;
+    float thumbX      = bar.innerX;
+    float thumbWidth  = bar.barLength;
+    float panelWidth  = panel.width;
+
+    float maxTravel = trackWidth - thumbWidth;
+    float maxContentOffset = maxContentWidth - panelWidth;
+
+    float scrollRatio = (thumbX - trackLeft) / maxTravel; 
+
+    if(scrollRatio < 0.0f) scrollRatio = 0.0f;
+    if(scrollRatio > 1.0f) scrollRatio = 1.0f;
+
+    float contentOffset = scrollRatio * maxContentOffset;
+    return contentOffset;
+}
+
 
 // -------- update panels/buttons ---------
 void updateButton(Button* button, Vector2 mouse)
@@ -953,37 +1015,26 @@ void updateScrollPanel(ScrollPanel* panel, Vector2 mouse)
     }
 }
 
-float getScrollBarY_contentOffset(ScrollBar_Y bar, Rectangle panel, float totalContentHeight)
-{
-    float trackHeight = bar.rec.height;
-    float trackTop    = bar.rec.y;
-    float thumbY      = bar.innerY;
-    float thumbHeight = bar.barLength;
-    float panelHeight = panel.height;
-
-    float maxTravel = trackHeight - thumbHeight;
-    float maxContentOffset = totalContentHeight - panelHeight;
-
-    float scrollRatio = (thumbY - trackTop) / maxTravel; 
-
-    if(scrollRatio < 0.0f) scrollRatio = 0.0f;
-    if(scrollRatio > 1.0f) scrollRatio = 1.0f;
-
-    float contentOffset = scrollRatio * maxContentOffset;
-    return contentOffset;
-}
-
 void updateButtonPanel(ButtonPanel* panel, Vector2 mouse)
 {
     updateScrollPanel(&panel->panel, mouse);
 
     Rectangle panelRec = panel->panel.panel.rec;
-    float contentHeight = panel->totalContentHeight + (panel->padY*2);
+    float contentHeight   = panel->totalContentHeight + (panel->padY*2);
+    float maxContentWidth = panel->maxContentWidth; 
 
-    float contentOffset = getScrollBarY_contentOffset(panel->panel.scrollBarY, panelRec, contentHeight);
+    float contentOffsetY = 0.0f;
+    float contentOffsetX = panel->padX; 
+    if(panel->panel.enableScrollY){
+        contentOffsetY = getScrollBarY_contentOffset(panel->panel.scrollBarY, panelRec, contentHeight);
+    }
+    if(panel->panel.enableScrollX){
+        contentOffsetX += getScrollBarX_contentOffset(panel->panel.scrollBarX, panelRec, maxContentWidth);
+    }
 
     for(int i = 0; i < panel->size; i++){
-        panel->items[i].button.rec.y = panel->items[i].baseY - contentOffset;
+        panel->items[i].button.rec.y = panel->items[i].baseY - contentOffsetY;
+        panel->items[i].button.rec.x = panel->items[i].baseX - contentOffsetX;
 
         //check if whole/part of button is inside the panel
         if(CheckCollisionRecs(panel->items[i].button.rec, panelRec)){
@@ -1027,6 +1078,8 @@ void updateTextBox(TextBox* textBox, Vector2 mouse)
 
     if(textBox->isActive){
         int key = GetCharPressed();
+        if(textBox->text_length >= MAX_TEXT_INPUT_SIZE-1) return;
+
         if(key >= 32 && key <= 126){
             textBox->text_input[textBox->text_length++] = key;
             textBox->text_input[textBox->text_length] = '\0';
@@ -1063,7 +1116,7 @@ void drawButton(Button button)
 
 void drawLabel(Label label)
 {
-    DrawText(label.label, label.x + label.padX, label.y + label.padY, label.fontSize, label.color);    
+    DrawText(label.label, label.x, label.y, label.fontSize, label.color);    
 }
 
 void drawActionButton_D(ActionButton_D button)
@@ -1347,8 +1400,7 @@ void drawScrollPanel(ScrollPanel panel)
 
 void drawButtonPanel(ButtonPanel panel)
 {
-    drawScrollPanel(panel.panel); 
-
+    drawScrollPanel(panel.panel);
     BeginScissorMode(
         (int)panel.panel.panel.rec.x, 
         (int)panel.panel.panel.rec.y, 
@@ -1359,8 +1411,7 @@ void drawButtonPanel(ButtonPanel panel)
     for(int i = 0; i < panel.size; i++){
         drawSelectionButton_B(panel.items[i]);
     }
-
-   EndScissorMode();
+    EndScissorMode();
 }
 
 void drawTextBox(TextBox textBox)
@@ -1368,12 +1419,23 @@ void drawTextBox(TextBox textBox)
     int padX = 10;
     int padY = 5;
     int fontSize = textBox.rec.height - (2*padY);
-
+    int textWidth = MeasureText(textBox.text_input, fontSize);
 
     DrawRectangleRec(textBox.rec, textBox.color);
-    DrawText(textBox.text_input, textBox.rec.x + padX, textBox.rec.y + padY, fontSize, textBox.textColor);
+    BeginScissorMode(
+        textBox.rec.x + padX,
+        textBox.rec.y,
+        textBox.rec.width,
+        textBox.rec.height
+    );
 
-    int textWidth = MeasureText(textBox.text_input, fontSize);
+    static float textOffsetX = 0.0f;
+    if(textWidth >= (textBox.rec.width - padX)){textOffsetX = textWidth - (textBox.rec.width - (2*padX));}
+    else textOffsetX = 0.0f;
+
+    DrawText(textBox.text_input, textBox.rec.x + padX - textOffsetX, textBox.rec.y + padY, fontSize, textBox.textColor);
+    EndScissorMode(); 
+
 
     static bool Blink = true;
     static float BlinkTime = 0.0f;
@@ -1386,14 +1448,16 @@ void drawTextBox(TextBox textBox)
     }
 
     if(textBox.isActive && Blink){
-        DrawLineEx((Vector2){textBox.rec.x + padX + (textWidth), 
+        float cursor_x = textBox.rec.x + padX + textWidth;
+        if(cursor_x > textBox.rec.x + (textBox.rec.width - padX)) cursor_x = textBox.rec.x + textBox.rec.width - padX;
+
+        DrawLineEx((Vector2){cursor_x, 
                 textBox.rec.y + (padY/2)},
-                (Vector2){textBox.rec.x + padX + (textWidth), 
+                (Vector2){cursor_x, 
                 textBox.rec.y + textBox.rec.height - padY}, 3, textBox.textColor
         );
     }
 }
-
 
 
 void drawText(Text text){
